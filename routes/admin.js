@@ -38,6 +38,7 @@ router.post('/brand-stores', auth, requireAdmin, async (ctx) => {
       brand: Joi.string().required(),
       mall: Joi.string().required(), // 支持逗号分隔的商场ID
       storeName: Joi.string().allow('', null),
+      score: Joi.number(),
       floor: Joi.string().allow('', null),
       unitNumber: Joi.string().allow('', null),
       openingHours: Joi.string().allow('', null),
@@ -110,6 +111,7 @@ router.post('/brand-stores', auth, requireAdmin, async (ctx) => {
         district: mall.district ? mall.district._id : null,
         storeAddress: value.storeAddress || mall.address, // 优先使用传入的地址，否则使用商场地址
         storeName: value.storeName,
+        score: value.score,
         floor: value.floor,
         unitNumber: value.unitNumber,
         openingHours: value.openingHours,
@@ -166,6 +168,7 @@ router.put('/brand-stores/:id', auth, requireAdmin, async (ctx) => {
       city: Joi.string(),
       district: Joi.string().allow(null, ''),
       storeName: Joi.string().allow('', null),
+      score: Joi.number().allow(null, 0),
       floor: Joi.string().allow('', null),
       unitNumber: Joi.string().allow('', null),
       openingHours: Joi.string().allow('', null),
@@ -648,7 +651,8 @@ router.post('/brands', auth, requireAdmin, async (ctx) => {
       district: Joi.string(),
       address: Joi.string(),
       contactPhone: Joi.string(),
-      contactEmail: Joi.string().email()
+      contactEmail: Joi.string().email(),
+      sort: Joi.number(),
     }).validate(ctx.request.body);
 
     if (error) {
@@ -694,7 +698,9 @@ router.put('/brands/:id', auth, requireAdmin, async (ctx) => {
       address: Joi.string().allow('', null),
       contactPhone: Joi.string().allow('', null),
       contactEmail: Joi.string().email().allow('', null),
-      isActive: Joi.boolean()
+      isActive: Joi.boolean(),
+      sort: Joi.number(),
+
     }).validate(ctx.request.body);
 
     if (error) {
@@ -763,142 +769,11 @@ router.delete('/brands/:id', auth, requireAdmin, async (ctx) => {
   }
 });
 
-// 商场管理
-// 创建商场
-router.post('/malls', auth, requireAdmin, async (ctx) => {
-  try {
-    const { error, value } = Joi.object({
-      name: Joi.string().required(),
-      code: Joi.string().allow('', null),
-      description: Joi.string().allow('', null),
-      logo: Joi.string().allow('', null),
-      website: Joi.string().uri().allow('', null),
-      province: Joi.string().allow('', null),
-      city: Joi.string().allow('', null),
-      district: Joi.string().allow('', null),
-      address: Joi.string().allow('', null),
-      contactPhone: Joi.string().allow('', null),
-      contactEmail: Joi.string().email().allow('', null),
-      floorCount: Joi.number().default(1),
-      totalArea: Joi.number().default(0),
-      parkingSpaces: Joi.number().default(0),
-      openingHours: Joi.string()
-    }).validate(ctx.request.body);
 
-    if (error) {
-      ctx.status = 400;
-      ctx.body = {
-        success: false,
-        message: error.details[0].message
-      };
-      return;
-    }
 
-    const mall = new Mall(value);
-    await mall.save();
 
-    ctx.body = {
-      success: true,
-      message: '商场创建成功',
-      data: mall
-    };
-  } catch (error) {
-    ctx.status = 500;
-    ctx.body = {
-      success: false,
-      message: '创建商场失败',
-      error: error.message
-    };
-  }
-});
 
-// 更新商场
-router.put('/malls/:id', auth, requireAdmin, async (ctx) => {
-  try {
-    const { error, value } = Joi.object({
-      name: Joi.string().allow('', null),
-      code: Joi.string().allow('', null),
-      description: Joi.string().allow('', null),
-      logo: Joi.string().allow('', null),
-      website: Joi.string().uri().allow('', null),
-      province: Joi.string().allow('', null),
-      city: Joi.string().allow('', null),
-      district: Joi.string().allow('', null),
-      address: Joi.string().allow('', null),
-      contactPhone: Joi.string().allow('', null),
-      contactEmail: Joi.string().email().allow('', null),
-      floorCount: Joi.number().allow('', null),
-      totalArea: Joi.number().allow('', null),
-      parkingSpaces: Joi.number().allow('', null),
-      openingHours: Joi.string().allow('', null),
-      isActive: Joi.boolean()
-    }).validate(ctx.request.body);
 
-    if (error) {
-      ctx.status = 400;
-      ctx.body = {
-        success: false,
-        message: error.details[0].message
-      };
-      return;
-    }
-
-    const mall = await Mall.findByIdAndUpdate(
-      ctx.params.id,
-      value,
-      { new: true, runValidators: true }
-    );
-
-    if (!mall) {
-      ctx.status = 404;
-      ctx.body = {
-        success: false,
-        message: '商场不存在'
-      };
-      return;
-    }
-
-    ctx.body = {
-      success: true,
-      message: '商场更新成功',
-      data: mall
-    };
-  } catch (error) {
-    ctx.status = 500;
-    ctx.body = {
-      success: false,
-      message: '更新商场失败',
-      error: error.message
-    };
-  }
-});
-
-// 删除商场
-router.delete('/malls/:id', auth, requireAdmin, async (ctx) => {
-  try {
-    const mall = await Mall.findByIdAndDelete(ctx.params.id);
-    if (!mall) {
-      ctx.status = 404;
-      ctx.body = {
-        success: false,
-        message: '商场不存在'
-      };
-      return;
-    }
-
-    ctx.body = {
-      success: true,
-      message: '商场删除成功'
-    };
-  } catch (error) {
-    ctx.status = 500;
-    ctx.body = {
-      success: false,
-      message: '删除商场失败',
-      error: error.message
-    };
-  }
-});
 
 // 用户管理
 // 获取用户列表
@@ -975,6 +850,240 @@ router.put('/users/:id/status', auth, requireAdmin, async (ctx) => {
     ctx.body = {
       success: false,
       message: '更新用户状态失败',
+      error: error.message
+    };
+  }
+});
+
+// ... existing code ...
+const Dictionary = require('../models/Dictionary');
+
+// 获取字典列表
+router.get('/dictionaries', async (ctx) => {
+  try {
+    const { page = 1, limit = 20, type, search } = ctx.query;
+    const skip = (page - 1) * limit;
+
+    let query = {};
+    if (type) {
+      query.type = type;
+    }
+    if (search) {
+      query.$or = [
+        { label: { $regex: search, $options: 'i' } },
+        { value: { $regex: search, $options: 'i' } },
+        { type: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    const dictionaries = await Dictionary.find(query)
+      .skip(skip)
+      .limit(parseInt(limit))
+      .sort({ type: 1, sort: 1, createdAt: -1 });
+
+    const total = await Dictionary.countDocuments(query);
+
+    ctx.body = {
+      success: true,
+      data: {
+        dictionaries,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / limit)
+        }
+      }
+    };
+  } catch (error) {
+    ctx.status = 500;
+    ctx.body = {
+      success: false,
+      message: '获取字典列表失败',
+      error: error.message
+    };
+  }
+});
+
+// 获取字典类型列表
+router.get('/dictionaries/types', async (ctx) => {
+  try {
+    const types = await Dictionary.distinct('type');
+
+    ctx.body = {
+      success: true,
+      data: { types }
+    };
+  } catch (error) {
+    ctx.status = 500;
+    ctx.body = {
+      success: false,
+      message: '获取字典类型失败',
+      error: error.message
+    };
+  }
+});
+
+// 创建字典项
+router.post('/dictionaries', async (ctx) => {
+  try {
+    const { type, label, value, sort, description, isActive } = ctx.request.body;
+
+    // 验证必需字段
+    if (!type || !label || !value) {
+      ctx.status = 400;
+      ctx.body = {
+        success: false,
+        message: '类型、标签和值都是必需的'
+      };
+      return;
+    }
+
+    const dictionary = new Dictionary({
+      type,
+      label,
+      value,
+      sort: sort || 0,
+      description,
+      isActive: isActive !== undefined ? isActive : true
+    });
+
+    await dictionary.save();
+
+    ctx.body = {
+      success: true,
+      data: { dictionary },
+      message: '字典项创建成功'
+    };
+  } catch (error) {
+    if (error.code === 11000) {
+      ctx.status = 400;
+      ctx.body = {
+        success: false,
+        message: '该类型下的值已存在'
+      };
+    } else {
+      ctx.status = 500;
+      ctx.body = {
+        success: false,
+        message: '创建字典项失败',
+        error: error.message
+      };
+    }
+  }
+});
+
+// 更新字典项
+router.put('/dictionaries/:id', async (ctx) => {
+  try {
+    const { id } = ctx.params;
+    const { type, label, value, sort, description, isActive } = ctx.request.body;
+
+    const dictionary = await Dictionary.findByIdAndUpdate(
+      id,
+      {
+        type,
+        label,
+        value,
+        sort,
+        description,
+        isActive
+      },
+      { new: true, runValidators: true }
+    );
+
+    if (!dictionary) {
+      ctx.status = 404;
+      ctx.body = {
+        success: false,
+        message: '字典项不存在'
+      };
+      return;
+    }
+
+    ctx.body = {
+      success: true,
+      data: { dictionary },
+      message: '字典项更新成功'
+    };
+  } catch (error) {
+    if (error.code === 11000) {
+      ctx.status = 400;
+      ctx.body = {
+        success: false,
+        message: '该类型下的值已存在'
+      };
+    } else {
+      ctx.status = 500;
+      ctx.body = {
+        success: false,
+        message: '更新字典项失败',
+        error: error.message
+      };
+    }
+  }
+});
+
+// 删除字典项
+router.delete('/dictionaries/:id', async (ctx) => {
+  try {
+    const { id } = ctx.params;
+
+    const dictionary = await Dictionary.findByIdAndDelete(id);
+
+    if (!dictionary) {
+      ctx.status = 404;
+      ctx.body = {
+        success: false,
+        message: '字典项不存在'
+      };
+      return;
+    }
+
+    ctx.body = {
+      success: true,
+      message: '字典项删除成功'
+    };
+  } catch (error) {
+    ctx.status = 500;
+    ctx.body = {
+      success: false,
+      message: '删除字典项失败',
+      error: error.message
+    };
+  }
+});
+
+// 批量更新字典项排序
+router.put('/dictionaries/batch/sort', async (ctx) => {
+  try {
+    const { items } = ctx.request.body; // [{ id, sort }, ...]
+
+    if (!Array.isArray(items)) {
+      ctx.status = 400;
+      ctx.body = {
+        success: false,
+        message: '请提供有效的排序数据'
+      };
+      return;
+    }
+
+    // 批量更新排序
+    const updatePromises = items.map(item =>
+      Dictionary.findByIdAndUpdate(item.id, { sort: item.sort })
+    );
+
+    await Promise.all(updatePromises);
+
+    ctx.body = {
+      success: true,
+      message: '排序更新成功'
+    };
+  } catch (error) {
+    ctx.status = 500;
+    ctx.body = {
+      success: false,
+      message: '更新排序失败',
       error: error.message
     };
   }

@@ -1,0 +1,70 @@
+[{
+  "_id": {
+    "$oid": "68a2c8e783192a4c2131ed23"
+  },
+  "name": "COACH",
+  "code": "COACH",
+  "isActive": true,
+  "createdAt": {
+    "$date": "2025-08-18T06:32:07.044Z"
+  },
+  "updatedAt": {
+    "$date": "2025-08-22T07:40:30.747Z"
+  },
+  "__v": 0,
+  "address": "",
+  "province": {
+    "$oid": "68a282e76e1688af0d5ca7cf"
+  },
+  "city": {
+    "$oid": "68a282e76e1688af0d5cae63"
+  },
+  "category": "",
+  "website": "",
+  "logo": "http://localhost:3000/uploads/logo-1755848429402-871094756.png"
+},
+{
+  "_id": {
+    "$oid": "68a2ccffed3188f703c185d3"
+  },
+  "name": "GUCCI",
+  "code": "GUCCI",
+  "isActive": true,
+  "createdAt": {
+    "$date": "2025-08-18T06:49:35.285Z"
+  },
+  "updatedAt": {
+    "$date": "2025-08-20T07:34:02.264Z"
+  },
+  "__v": 0,
+  "city": {
+    "$oid": "68a282e76e1688af0d5cae19"
+  },
+  "province": {
+    "$oid": "68a282e76e1688af0d5ca7cd"
+  },
+  "address": "",
+  "category": "轻奢",
+  "website": "https://www.coach.com.cn/store/search",
+  "district": {
+    "$oid": "68a282e76e1688af0d5cae2d"
+  }
+},
+{
+  "_id": {
+    "$oid": "68a2edab906514ea53afba27"
+  },
+  "name": "LV",
+  "code": "LV",
+  "isActive": true,
+  "createdAt": {
+    "$date": "2025-08-18T09:08:59.518Z"
+  },
+  "updatedAt": {
+    "$date": "2025-08-18T09:15:40.361Z"
+  },
+  "__v": 0,
+  "address": "",
+  "category": "",
+  "website": ""
+}]

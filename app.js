@@ -98,11 +98,13 @@ app.use(async (ctx, next) => {
 const authRoutes = require('./routes/auth');
 const mapRoutes = require('./routes/map');
 const adminRoutes = require('./routes/admin');
+const mallRoutes = require('./routes/mall');
 const uploadRoutes = require('./routes/upload');
 
 app.use(authRoutes.routes()).use(authRoutes.allowedMethods());
 app.use(mapRoutes.routes()).use(mapRoutes.allowedMethods());
 app.use(adminRoutes.routes()).use(adminRoutes.allowedMethods());
+app.use(mallRoutes.routes()).use(mallRoutes.allowedMethods());
 app.use(uploadRoutes.routes()).use(uploadRoutes.allowedMethods());
 
 // 生产环境下静态托管前端构建产物，并提供 SPA 回退

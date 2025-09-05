@@ -26,6 +26,9 @@ const brandStoreSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  score: {
+    type: Number,
+  },
   storeAddress: {
     type: String,
     trim: true

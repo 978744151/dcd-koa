@@ -6,6 +6,7 @@ const District = require('../models/District');
 const BrandStore = require('../models/BrandStore');
 const Brand = require('../models/Brand');
 const Mall = require('../models/Mall');
+const Dictionary = require('../models/Dictionary');
 
 const router = new Router({
   prefix: '/api/map'
@@ -285,9 +286,21 @@ router.get('/brands', async (ctx) => {
       .populate('district', 'name')
       .skip(skip)
       .limit(parseInt(limit))
-      .sort({ createdAt: -1 });
+      .sort({ sort: -1, createdAt: -1 });
 
-    // 为每个品牌添加门店数量
+    // 获取品牌分类字典数据
+    const brandCategoryDict = await Dictionary.find({
+      type: 'brand_category',
+      isActive: true
+    }).lean();
+
+    // 创建字典映射
+    const categoryMap = {};
+    brandCategoryDict.forEach(dict => {
+      categoryMap[dict.value] = dict.label;
+    });
+
+    // 为每个品牌添加门店数量和分类转换
     const brandsWithStoreCount = await Promise.all(
       brands.map(async (brand) => {
         let storeQuery = { brand: brand._id, isActive: true };
@@ -296,10 +309,12 @@ router.get('/brands', async (ctx) => {
         if (districtId) storeQuery.district = districtId;
 
         const storeCount = await BrandStore.countDocuments(storeQuery);
+        const brandObj = brand.toObject();
 
         return {
-          ...brand.toObject(),
-          storeCount
+          ...brandObj,
+          storeCount,
+          categoryStr: categoryMap[brandObj.category] || brandObj.category || ''
         };
       })
     );
@@ -323,6 +338,53 @@ router.get('/brands', async (ctx) => {
     ctx.body = {
       success: false,
       message: '获取品牌数据失败',
+      error: error.message
+    };
+  }
+});
+
+// 简化的品牌详情接口
+router.get('/brands/detail', async (ctx) => {
+  try {
+    const { brandId } = ctx.query;
+
+    // 验证必需参数
+    if (!brandId) {
+      ctx.status = 400;
+      ctx.body = {
+        success: false,
+        message: '品牌ID是必需的参数'
+      };
+      return;
+    }
+
+    // 获取品牌基本信息
+    const brand = await Brand.findById(brandId)
+      .populate('province', 'name code')
+      .populate('city', 'name code')
+      .populate('district', 'name code')
+      .select('name code description logo website category province city district address contactPhone contactEmail isActive createdAt updatedAt');
+
+    if (!brand) {
+      ctx.status = 404;
+      ctx.body = {
+        success: false,
+        message: '品牌不存在'
+      };
+      return;
+    }
+
+    ctx.body = {
+      success: true,
+      data: {
+        brand
+      }
+    };
+  } catch (error) {
+    ctx.status = 500;
+    ctx.body = {
+      success: false,
+      message: '获取品牌详情失败',
       error: error.message
     };
   }
@@ -598,49 +660,145 @@ router.get('/tree', async (ctx) => {
     };
   }
 });
-// 获取省市区详情数据
-router.get('/detail', async (ctx) => {
+
+// 修复后的品牌门店详情接口
+router.get('/brandDetail', async (ctx) => {
   try {
     const { provinceId, cityId, districtId, brandId, search, page = 1, limit = 20 } = ctx.query;
     const skip = (page - 1) * limit;
+
+    // 验证必需参数
+    if (!brandId) {
+      ctx.status = 400;
+      ctx.body = {
+        success: false,
+        message: '品牌ID是必需的参数'
+      };
+      return;
+    }
 
     if (!provinceId && !cityId && !districtId) {
       ctx.status = 400;
       ctx.body = {
         success: false,
-        message: '请提供省份、城市或区县ID'
+        message: '请至少提供省份、城市或区县ID中的一个'
+      };
+      return;
+    }
+
+    // 验证品牌是否存在
+    const brand = await Brand.findById(brandId);
+    if (!brand) {
+      ctx.status = 404;
+      ctx.body = {
+        success: false,
+        message: '品牌不存在'
       };
       return;
     }
 
     // 构建查询条件
-    let storeQuery = { isActive: true };
-    if (provinceId) storeQuery.province = provinceId;
-    if (cityId) storeQuery.city = cityId;
-    if (districtId) storeQuery.district = districtId;
-    if (brandId) storeQuery.brand = brandId;
+    let storeQuery = {
+      isActive: true,
+      brand: brandId
+    };
 
-    // 构建聚合管道
+    // 根据传入的地理位置参数构建查询条件
+    if (districtId) {
+      storeQuery.district = districtId;
+    } else if (cityId) {
+      storeQuery.city = cityId;
+    } else if (provinceId) {
+      storeQuery.province = provinceId;
+    }
+
+
+    // 先检查是否有匹配的原始数据
+    const rawCount = await BrandStore.countDocuments(storeQuery);
+    console.log('匹配的原始数据数量:', rawCount);
+
+    if (rawCount === 0) {
+      console.log('没有找到匹配的门店数据');
+      // 检查是否有该品牌的任何门店
+      const brandStoreCount = await BrandStore.countDocuments({ brand: brandId, isActive: true });
+      console.log('该品牌总门店数量:', brandStoreCount);
+
+      if (brandStoreCount === 0) {
+        console.log('该品牌没有任何门店数据');
+      } else {
+        console.log('该品牌有门店，但不在指定地区');
+        // 查看该品牌的门店分布
+        const brandStores = await BrandStore.find({ brand: brandId, isActive: true })
+          .select('province city district storeName')
+          .limit(5);
+        console.log('该品牌的部分门店分布:', brandStores);
+      }
+    }
+
+    // 在第927行附近，替换现有的聚合管道
+    // 替换原有的聚合管道
     const pipeline = [
       { $match: storeQuery },
-      { $lookup: { from: 'brands', localField: 'brand', foreignField: '_id', as: 'brand' } },
-      { $unwind: '$brand' },
-      ...(search ? [{ $match: { 'brand.name': { $regex: search, $options: 'i' } } }] : []),
-      { $lookup: { from: 'malls', localField: 'mall', foreignField: '_id', as: 'mall' } },
-      { $unwind: '$mall' },
-      { $lookup: { from: 'provinces', localField: 'province', foreignField: '_id', as: 'province' } },
-      { $unwind: '$province' },
-      { $lookup: { from: 'cities', localField: 'city', foreignField: '_id', as: 'city' } },
-      { $unwind: '$city' },
-      { $lookup: { from: 'districts', localField: 'district', foreignField: '_id', as: 'district' } },
-      { $unwind: { path: '$district', preserveNullAndEmptyArrays: true } },
+      {
+        $lookup: {
+          from: 'brands',
+          localField: 'brand',
+          foreignField: '_id',
+          as: 'brandInfo'
+        }
+      },
+      {
+        $lookup: {
+          from: 'malls',
+          localField: 'mall',
+          foreignField: '_id',
+          as: 'mallInfo'
+        }
+      },
+      {
+        $lookup: {
+          from: 'provinces',
+          localField: 'province',
+          foreignField: '_id',
+          as: 'provinceInfo'
+        }
+      },
+      {
+        $lookup: {
+          from: 'cities',
+          localField: 'city',
+          foreignField: '_id',
+          as: 'cityInfo'
+        }
+      },
+      {
+        $lookup: {
+          from: 'districts',
+          localField: 'district',
+          foreignField: '_id',
+          as: 'districtInfo'
+        }
+      },
+      {
+        $addFields: {
+          brand: { $arrayElemAt: ['$brandInfo', 0] },
+          mall: { $arrayElemAt: ['$mallInfo', 0] },
+          province: { $arrayElemAt: ['$provinceInfo', 0] },
+          city: { $arrayElemAt: ['$cityInfo', 0] },
+          district: { $arrayElemAt: ['$districtInfo', 0] }
+        }
+      },
       {
         $project: {
           _id: 1,
-          isActive: 1,
-          address: 1,
-          phone: 1,
+          storeName: 1,
+          storeAddress: 1,
+          isOla: 1,
+          floor: 1,
+          unitNumber: 1,
           openingHours: 1,
+          phone: 1,
+          isActive: 1,
           createdAt: 1,
           updatedAt: 1,
           brand: {
@@ -649,7 +807,8 @@ router.get('/detail', async (ctx) => {
             code: '$brand.code',
             category: '$brand.category',
             website: '$brand.website',
-            logo: '$brand.logo'
+            logo: '$brand.logo',
+            description: '$brand.description'
           },
           mall: {
             _id: '$mall._id',
@@ -669,86 +828,70 @@ router.get('/detail', async (ctx) => {
             code: '$city.code'
           },
           district: {
-            $cond: [
-              { $ne: ['$district', null] },
-              {
-                _id: '$district._id',
-                name: '$district.name',
-                code: '$district.code'
-              },
-              null
-            ]
+            _id: '$district._id',
+            name: '$district.name',
+            code: '$district.code'
           }
         }
       },
-      { $sort: { 'brand.name': 1, 'mall.name': 1 } },
+      { $sort: { 'province.name': 1, 'city.name': 1, 'district.name': 1, 'storeName': 1 } },
       { $skip: skip },
       { $limit: parseInt(limit) }
     ];
 
-    // 获取详情数据
-    const stores = await BrandStore.aggregate(pipeline);
 
-    // 获取总数
-    const totalPipeline = [
-      { $match: storeQuery },
-      { $lookup: { from: 'brands', localField: 'brand', foreignField: '_id', as: 'brand' } },
-      { $unwind: '$brand' },
-      ...(search ? [{ $match: { 'brand.name': { $regex: search, $options: 'i' } } }] : []),
-      { $count: 'total' }
-    ];
+    // 获取门店数据
+    // 使用 populate 查询
+    const stores = await BrandStore.find(storeQuery)
+      .populate('brand', '_id name code category website logo description')
+      .populate('mall', '_id name code address phone')
+      .populate('province', '_id name code')
+      .populate('city', '_id name code')
+      .populate('district', '_id name code')
+      .sort({ storeName: 1 })
+      .skip(skip)
+      .limit(parseInt(limit))
+      .lean();
+    console.log('聚合管道:', stores);
 
-    const totalResult = await BrandStore.aggregate(totalPipeline);
-    const total = totalResult.length > 0 ? totalResult[0].total : 0;
-
-    // 获取统计信息
-    const statsPipeline = [
-      { $match: storeQuery },
-      { $lookup: { from: 'brands', localField: 'brand', foreignField: '_id', as: 'brand' } },
-      { $unwind: '$brand' },
-      ...(search ? [{ $match: { 'brand.name': { $regex: search, $options: 'i' } } }] : []),
-      {
-        $group: {
-          _id: null,
-          mallCount: { $addToSet: '$mall' },
-          brandCount: { $addToSet: '$brand' },
-          storeCount: { $sum: 1 }
-        }
-      },
-      {
-        $project: {
-          _id: 0,
-          mallCount: { $size: '$mallCount' },
-          brandCount: { $size: '$brandCount' },
-          storeCount: 1
-        }
-      }
-    ];
-
-    const statsResult = await BrandStore.aggregate(statsPipeline);
-    const stats = statsResult.length > 0 ? statsResult[0] : { mallCount: 0, brandCount: 0, storeCount: 0 };
+    if (stores.length > 0) {
+      console.log('第一个门店数据:', JSON.stringify(stores[0], null, 2));
+    } else {
+      // 如果还是没有数据，尝试最简单的聚合
+      console.log('尝试最简单的聚合查询...');
+      const simpleStores = await BrandStore.aggregate([
+        { $match: storeQuery },
+        { $limit: 5 }
+      ]);
+      console.log('简单聚合结果:', simpleStores.length, simpleStores);
+    }
+    // 获取总数（简化版本）
+    const total = await BrandStore.countDocuments(storeQuery);
 
     // 获取区域信息
     let regionInfo = {};
     if (provinceId) {
-      const province = await Province.findById(provinceId);
-      if (province) regionInfo.province = { _id: province._id, name: province.name, code: province.code };
+      const province = await Province.findById(provinceId).select('_id name code');
+      if (province) regionInfo.province = province;
     }
     if (cityId) {
-      const city = await City.findById(cityId);
-      if (city) regionInfo.city = { _id: city._id, name: city.name, code: city.code };
+      const city = await City.findById(cityId).select('_id name code');
+      if (city) regionInfo.city = city;
     }
     if (districtId) {
-      const district = await District.findById(districtId);
-      if (district) regionInfo.district = { _id: district._id, name: district.name, code: district.code };
+      const district = await District.findById(districtId).select('_id name code');
+      if (district) regionInfo.district = district;
     }
 
     ctx.body = {
       success: true,
       data: {
+        brand,
         stores,
         regionInfo,
-        stats,
+        stats: {
+          storeCount: total
+        },
         pagination: {
           page: parseInt(page),
           limit: parseInt(limit),
@@ -761,11 +904,12 @@ router.get('/detail', async (ctx) => {
     ctx.status = 500;
     ctx.body = {
       success: false,
-      message: '获取详情数据失败',
+      message: '获取品牌门店详情失败',
       error: error.message
     };
   }
 });
+
 // 获取商场数据
 router.get('/malls', async (ctx) => {
   try {
@@ -854,4 +998,84 @@ router.get('/statistics', async (ctx) => {
   }
 });
 
+// 获取字典数据（供前端使用）
+router.get('/dictionaries', async (ctx) => {
+  try {
+    const { type, types } = ctx.query;
+
+    let query = { isActive: true };
+
+    if (type) {
+      // 获取单个类型的字典项
+      query.type = type;
+
+      const dictionaries = await Dictionary.find(query)
+        .select('label value sort description')
+        .sort({ sort: 1, createdAt: 1 });
+
+      ctx.body = {
+        success: true,
+        data: {
+          type,
+          items: dictionaries.map(item => ({
+            label: item.label,
+            value: item.value,
+            description: item.description
+          }))
+        }
+      };
+    } else if (types) {
+      // 获取多个类型的字典项
+      const typeArray = types.split(',');
+      const result = {};
+
+      for (const t of typeArray) {
+        const dictionaries = await Dictionary.find({ type: t, isActive: true })
+          .select('label value sort description')
+          .sort({ sort: 1, createdAt: 1 });
+
+        result[t] = dictionaries.map(item => ({
+          label: item.label,
+          value: item.value,
+          description: item.description
+        }));
+      }
+
+      ctx.body = {
+        success: true,
+        data: result
+      };
+    } else {
+      // 获取所有字典项，按类型分组
+      const dictionaries = await Dictionary.find(query)
+        .select('type label value sort description')
+        .sort({ type: 1, sort: 1, createdAt: 1 });
+
+      const grouped = {};
+      dictionaries.forEach(item => {
+        if (!grouped[item.type]) {
+          grouped[item.type] = [];
+        }
+        grouped[item.type].push({
+          label: item.label,
+          value: item.value,
+          description: item.description
+        });
+      });
+
+      ctx.body = {
+        success: true,
+        data: grouped
+      };
+    }
+  } catch (error) {
+    ctx.status = 500;
+    ctx.body = {
+      success: false,
+      message: '获取字典数据失败',
+      error: error.message
+    };
+  }
+});
+// ... existing code ...
 module.exports = router;
