@@ -700,7 +700,7 @@ router.put('/brands/:id', auth, requireAdmin, async (ctx) => {
       contactEmail: Joi.string().email().allow('', null),
       isActive: Joi.boolean(),
       sort: Joi.number(),
-
+      score: Joi.number(),
     }).validate(ctx.request.body);
 
     if (error) {

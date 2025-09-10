@@ -284,6 +284,7 @@ router.get('/brands', async (ctx) => {
       .populate('province', 'name')
       .populate('city', 'name')
       .populate('district', 'name')
+
       .skip(skip)
       .limit(parseInt(limit))
       .sort({ sort: -1, createdAt: -1 });
@@ -1077,5 +1078,134 @@ router.get('/dictionaries', async (ctx) => {
     };
   }
 });
-// ... existing code ...
+// 商场/城市对比接口
+router.post('/comparison', async (ctx) => {
+  try {
+    const { type, ids, brandIds } = ctx.request.body; // type: 'mall' | 'city', ids: 商场或城市ID数组, brandIds: 可选的品牌ID筛选
+
+    if (!type || !ids || !Array.isArray(ids) || ids.length === 0) {
+      ctx.status = 400;
+      ctx.body = {
+        success: false,
+        message: '参数错误：需要提供对比类型和ID列表'
+      };
+      return;
+    }
+
+    const results = [];
+
+    for (const id of ids) {
+      let query = { isActive: true };
+      let locationInfo = {};
+
+      if (type === 'mall') {
+        query.mall = id;
+        const mall = await Mall.findById(id).populate('city', 'name').populate('province', 'name');
+        if (mall) {
+          locationInfo = {
+            id: mall._id,
+            name: mall.name,
+            type: 'mall',
+            city: mall.city?.name,
+            province: mall.province?.name
+          };
+        }
+      } else if (type === 'city') {
+        query.city = id;
+        const city = await City.findById(id).populate('province', 'name');
+        if (city) {
+          locationInfo = {
+            id: city._id,
+            name: city.name,
+            type: 'city',
+            province: city.province?.name
+          };
+        }
+      }
+
+      // 如果指定了品牌筛选
+      if (brandIds && Array.isArray(brandIds) && brandIds.length > 0) {
+        query.brand = { $in: brandIds };
+      }
+
+      // 获取该位置下的所有品牌店铺
+      const stores = await BrandStore.find(query)
+        .populate('brand', 'name category score code')
+        .lean();
+
+      // 按品牌分组并计算分值
+      const brandMap = {};
+      let totalScore = 0;
+      let totalStores = 0;
+
+      stores.forEach(store => {
+        if (store.brand) {
+          const brandId = store.brand._id.toString();
+          if (!brandMap[brandId]) {
+            brandMap[brandId] = {
+              brand: store.brand,
+              storeCount: 0,
+              totalScore: 0,
+              averageScore: 0
+            };
+          }
+
+          brandMap[brandId].storeCount++;
+
+          // 获取品牌分数，如果没有分数则根据category自动分配
+          let brandScore = store.brand.score;
+          if (brandScore == null || brandScore === 0) {
+            if (store.brand.category == 2) {
+              brandScore = 5;
+            } else if (store.brand.category == 1) {
+              brandScore = 10;
+            } else {
+              brandScore = 0;
+            }
+          }
+
+          brandMap[brandId].totalScore += brandScore;
+          totalScore += brandScore;
+          totalStores++;
+        }
+      });
+
+      // 计算每个品牌的平均分
+      const brands = Object.values(brandMap).map(item => {
+        item.averageScore = item.storeCount > 0 ?
+          (item.totalScore / item.storeCount).toFixed(1) : 0;
+        return item;
+      });
+
+      results.push({
+        location: locationInfo,
+        brands: brands,
+        summary: {
+          totalBrands: brands.length,
+          totalStores: totalStores,
+          totalScore: totalScore.toFixed(1),
+          averageScore: totalStores > 0 ? (totalScore / totalStores).toFixed(1) : 0
+        }
+      });
+    }
+
+    ctx.body = {
+      success: true,
+      data: {
+        type,
+        results,
+        comparisonDate: new Date().toISOString()
+      }
+    };
+
+  } catch (error) {
+    ctx.status = 500;
+    ctx.body = {
+      success: false,
+      message: '获取对比数据失败',
+      error: error.message
+    };
+  }
+});
+
 module.exports = router;
